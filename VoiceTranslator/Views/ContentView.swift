@@ -69,7 +69,10 @@ struct ContentView: View {
             await requestPermissions()
             setupSpeechManager()
             setupBroadcastManager()
-            pipManager.setupPiP()
+            pipManager.refreshAvailability()
+        }
+        .onChange(of: appState.sourceLocaleIdentifier) { _, newValue in
+            broadcastManager.setSourceLocale(newValue)
         }
         .onChange(of: appState.sourceLocaleIdentifier) { _, newValue in
             broadcastManager.setSourceLocale(newValue)
