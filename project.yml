@@ -82,6 +82,8 @@ targets:
           NSExtensionPrincipalClass: $(PRODUCT_MODULE_NAME).SampleHandler
     settings:
       base:
+        PRODUCT_NAME: BroadcastExtension
+        PRODUCT_MODULE_NAME: BroadcastExtension
         PRODUCT_BUNDLE_IDENTIFIER: com.voicetranslator.app.broadcast
         INFOPLIST_FILE: BroadcastExtension/Info.plist
         CODE_SIGNING_ALLOWED: NO

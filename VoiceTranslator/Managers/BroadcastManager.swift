@@ -1,5 +1,7 @@
 import Foundation
 import ReplayKit
+import SwiftUI
+import UIKit
 
 @MainActor
 class BroadcastManager: ObservableObject {
