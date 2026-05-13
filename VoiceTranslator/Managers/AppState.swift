@@ -16,6 +16,10 @@ class AppState: ObservableObject {
     var targetLanguageCode: String {
         targetLanguage.languageCode?.identifier ?? "en"
     }
+
+    var sourceLocaleIdentifier: String {
+        UserDefaults.standard.string(forKey: "sourceLocale") ?? "en-US"
+    }
 }
 
 struct TranslationEntry: Identifiable {
