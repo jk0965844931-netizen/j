@@ -1,5 +1,6 @@
 import AVKit
 import AVFoundation
+import SwiftUI
 import UIKit
 
 @MainActor
@@ -10,6 +11,9 @@ class PiPManager: NSObject, ObservableObject {
 
     private var pipController: AVPictureInPictureController?
     private var displayLayer: AVSampleBufferDisplayLayer?
+    private var displayTimebase: CMTimebase?
+
+    var onLog: ((String, DiagnosticLogEntry.Level) -> Void)?
 
     private var currentOriginalText = ""
     private var currentTranslatedText = ""
@@ -18,22 +22,43 @@ class PiPManager: NSObject, ObservableObject {
 
     override init() {
         super.init()
+        refreshAvailability()
+    }
+
+    func refreshAvailability() {
+        let supported = AVPictureInPictureController.isPictureInPictureSupported()
+        let possible = pipController?.isPictureInPicturePossible ?? false
+        let changed = supported != isPiPAvailable || possible != isPiPPossible
+        isPiPAvailable = supported
+        isPiPPossible = possible
+        if changed {
+            log("PiP availability: supported=\(isPiPAvailable), possible=\(isPiPPossible)")
+        }
+    }
+
+    private func log(_ message: String, level: DiagnosticLogEntry.Level = .info) {
+        onLog?(message, level)
     }
 
     func setupPiP() {
         guard AVPictureInPictureController.isPictureInPictureSupported() else {
             isPiPAvailable = false
+            isPiPPossible = false
+            log("PiP ไม่รองรับบนอุปกรณ์นี้", level: .warning)
             return
         }
         isPiPAvailable = true
 
+        if let pipController {
+            isPiPPossible = pipController.isPictureInPicturePossible
+            log("PiP controller มีอยู่แล้ว possible=\(isPiPPossible)")
+            return
+        }
+
+        log("กำลังสร้าง PiP controller")
         activateAudioSession()
 
-        let layer = AVSampleBufferDisplayLayer()
-        layer.videoGravity = .resizeAspect
-        layer.backgroundColor = UIColor.black.cgColor
-        self.displayLayer = layer
-
+        let layer = ensureDisplayLayer()
         let contentSource = AVPictureInPictureController.ContentSource(
             sampleBufferDisplayLayer: layer,
             playbackDelegate: self
@@ -43,12 +68,15 @@ class PiPManager: NSObject, ObservableObject {
         pip.delegate = self
         pip.requiresLinearPlayback = true
         pip.canStartPictureInPictureAutomaticallyFromInline = false
-        self.pipController = pip
+        pipController = pip
+        log("สร้าง PiP controller สำเร็จ")
 
         pushBlankFrame()
 
-        DispatchQueue.main.asyncAfter(deadline: .now() + 0.5) { [weak self] in
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.5) { [weak self, weak pip] in
+            guard let pip else { return }
             self?.isPiPPossible = pip.isPictureInPicturePossible
+            self?.log("PiP possible หลัง setup=\(pip.isPictureInPicturePossible)")
         }
     }
 
@@ -57,8 +85,55 @@ class PiPManager: NSObject, ObservableObject {
             let session = AVAudioSession.sharedInstance()
             try session.setCategory(.playback, options: [.mixWithOthers])
             try session.setActive(true)
+            log("Audio session พร้อมสำหรับ PiP")
         } catch {
+            log("Audio session error: \(error.localizedDescription)", level: .error)
         }
+    }
+
+    private func ensureDisplayLayer() -> AVSampleBufferDisplayLayer {
+        if let displayLayer { return displayLayer }
+
+        let layer = AVSampleBufferDisplayLayer()
+        configureDisplayLayer(layer)
+        displayLayer = layer
+        log("สร้าง display layer สำหรับ PiP")
+        return layer
+    }
+
+    private func configureDisplayLayer(_ layer: AVSampleBufferDisplayLayer) {
+        layer.videoGravity = .resizeAspect
+        layer.backgroundColor = UIColor.black.cgColor
+
+        guard displayTimebase == nil else { return }
+
+        var timebase: CMTimebase?
+        CMTimebaseCreateWithSourceClock(
+            allocator: kCFAllocatorDefault,
+            sourceClock: CMClockGetHostTimeClock(),
+            timebaseOut: &timebase
+        )
+        if let timebase {
+            CMTimebaseSetTime(timebase, time: .zero)
+            CMTimebaseSetRate(timebase, rate: 1.0)
+            layer.controlTimebase = timebase
+            displayTimebase = timebase
+            log("ตั้งค่า PiP timebase สำเร็จ")
+        } else {
+            log("สร้าง PiP timebase ไม่สำเร็จ", level: .warning)
+        }
+    }
+
+    func attachDisplayLayer(to hostView: UIView) {
+        let layer = ensureDisplayLayer()
+
+        if layer.superlayer !== hostView.layer {
+            layer.removeFromSuperlayer()
+            hostView.layer.addSublayer(layer)
+            log("แนบ display layer เข้ากับ host view")
+        }
+        layer.frame = hostView.bounds
+        refreshAvailability()
     }
 
     func updateContent(original: String, translated: String, detectedLang: String, targetLang: String) {
@@ -66,21 +141,33 @@ class PiPManager: NSObject, ObservableObject {
         currentTranslatedText = translated
         currentDetectedLanguage = detectedLang
         currentTargetLanguage = targetLang
+        log("อัปเดต PiP content original=\(original.count) translated=\(translated.count)")
         pushFrame()
     }
 
     func startPiP() {
+        log("ผู้ใช้กดเริ่ม PiP")
+        if pipController == nil { setupPiP() }
         activateAudioSession()
         pushFrame()
+
         DispatchQueue.main.asyncAfter(deadline: .now() + 0.3) { [weak self] in
-            guard let self, let pip = self.pipController else { return }
-            if pip.isPictureInPicturePossible {
-                pip.startPictureInPicture()
+            guard let self, let pip = self.pipController else {
+                self?.log("เริ่ม PiP ไม่ได้: ไม่มี controller", level: .error)
+                return
             }
+            self.isPiPPossible = pip.isPictureInPicturePossible
+            guard pip.isPictureInPicturePossible else {
+                self.log("เริ่ม PiP ไม่ได้: isPictureInPicturePossible=false", level: .warning)
+                return
+            }
+            self.log("กำลัง startPictureInPicture")
+            pip.startPictureInPicture()
         }
     }
 
     func stopPiP() {
+        log("ผู้ใช้กดหยุด PiP")
         pipController?.stopPictureInPicture()
     }
 
@@ -91,7 +178,10 @@ class PiPManager: NSObject, ObservableObject {
     }
 
     private func pushFrame() {
-        guard let layer = displayLayer else { return }
+        guard let layer = displayLayer else {
+            log("pushFrame ข้าม: ยังไม่มี display layer", level: .warning)
+            return
+        }
 
         let size = CGSize(width: 360, height: 200)
         let renderer = UIGraphicsImageRenderer(size: size)
@@ -99,10 +189,17 @@ class PiPManager: NSObject, ObservableObject {
             drawOverlay(in: ctx.cgContext, size: size)
         }
 
-        guard let pixelBuffer = makePixelBuffer(from: image, size: size),
-              let sampleBuffer = makeSampleBuffer(from: pixelBuffer) else { return }
+        guard let pixelBuffer = makePixelBuffer(from: image, size: size) else {
+            log("สร้าง pixel buffer สำหรับ PiP ไม่สำเร็จ", level: .error)
+            return
+        }
+        guard let sampleBuffer = makeSampleBuffer(from: pixelBuffer) else {
+            log("สร้าง sample buffer สำหรับ PiP ไม่สำเร็จ", level: .error)
+            return
+        }
 
         if layer.status == .failed {
+            log("display layer failed: \(layer.error?.localizedDescription ?? "unknown")", level: .error)
             layer.flush()
         }
         layer.enqueue(sampleBuffer)
@@ -221,18 +318,48 @@ class PiPManager: NSObject, ObservableObject {
             sampleTiming: &timing,
             sampleBufferOut: &sb
         )
+
+        if let sb,
+           let attachments = CMSampleBufferGetSampleAttachmentsArray(sb, createIfNecessary: true) as? NSMutableArray,
+           let first = attachments.firstObject as? NSMutableDictionary {
+            first[kCMSampleAttachmentKey_DisplayImmediately] = true
+        }
         return sb
+    }
+}
+
+@MainActor
+struct PiPHostView: UIViewRepresentable {
+    @ObservedObject var manager: PiPManager
+
+    func makeUIView(context: Context) -> UIView {
+        let view = UIView(frame: CGRect(x: 0, y: 0, width: 360, height: 200))
+        view.backgroundColor = .black
+        manager.attachDisplayLayer(to: view)
+        return view
+    }
+
+    func updateUIView(_ uiView: UIView, context: Context) {
+        manager.attachDisplayLayer(to: uiView)
     }
 }
 
 extension PiPManager: AVPictureInPictureControllerDelegate {
     nonisolated func pictureInPictureControllerWillStartPictureInPicture(_ c: AVPictureInPictureController) {
-        Task { @MainActor in self.isPiPActive = true }
+        Task { @MainActor in
+            self.isPiPActive = true
+            self.log("PiP กำลังเริ่ม")
+        }
     }
     nonisolated func pictureInPictureControllerDidStopPictureInPicture(_ c: AVPictureInPictureController) {
-        Task { @MainActor in self.isPiPActive = false }
+        Task { @MainActor in
+            self.isPiPActive = false
+            self.log("PiP หยุดแล้ว")
+        }
     }
-    nonisolated func pictureInPictureController(_ c: AVPictureInPictureController, failedToStartPictureInPictureWithError error: Error) {}
+    nonisolated func pictureInPictureController(_ c: AVPictureInPictureController, failedToStartPictureInPictureWithError error: Error) {
+        Task { @MainActor in self.log("PiP start failed: \(error.localizedDescription)", level: .error) }
+    }
 }
 
 extension PiPManager: AVPictureInPictureSampleBufferPlaybackDelegate {
