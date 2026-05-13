@@ -4,6 +4,28 @@ struct SettingsView: View {
     @EnvironmentObject var appState: AppState
     @Environment(\.dismiss) var dismiss
 
+    @State private var selectedSourceLocale: String = UserDefaults.standard.string(forKey: "sourceLocale") ?? "en-US"
+
+    static let sourceLocales: [(id: String, name: String)] = [
+        ("en-US", "🇺🇸 อังกฤษ (US)"),
+        ("en-GB", "🇬🇧 อังกฤษ (UK)"),
+        ("th-TH", "🇹🇭 ไทย"),
+        ("zh-Hans", "🇨🇳 จีน (กลาง)"),
+        ("zh-Hant", "🇹🇼 จีน (ดั้งเดิม)"),
+        ("ja-JP", "🇯🇵 ญี่ปุ่น"),
+        ("ko-KR", "🇰🇷 เกาหลี"),
+        ("fr-FR", "🇫🇷 ฝรั่งเศส"),
+        ("de-DE", "🇩🇪 เยอรมัน"),
+        ("es-ES", "🇪🇸 สเปน"),
+        ("ru-RU", "🇷🇺 รัสเซีย"),
+        ("ar-SA", "🇸🇦 อาหรับ"),
+        ("vi-VN", "🇻🇳 เวียดนาม"),
+        ("id-ID", "🇮🇩 อินโดนีเซีย"),
+        ("pt-BR", "🇧🇷 โปรตุเกส"),
+        ("it-IT", "🇮🇹 อิตาลี"),
+        ("hi-IN", "🇮🇳 ฮินดี"),
+    ]
+
     var body: some View {
         NavigationStack {
             ZStack {
@@ -12,27 +34,38 @@ struct SettingsView: View {
 
                 List {
                     Section {
-                        Picker("ภาษาเป้าหมาย", selection: Binding(
+                        Picker("ภาษาต้นฉบับ (เสียงที่ฟัง)", selection: $selectedSourceLocale) {
+                            ForEach(Self.sourceLocales, id: \.id) { lang in
+                                Text(lang.name).tag(lang.id)
+                            }
+                        }
+                        .pickerStyle(.navigationLink)
+                        .foregroundStyle(.white.opacity(0.85))
+                        .onChange(of: selectedSourceLocale) { _, newVal in
+                            UserDefaults.standard.set(newVal, forKey: "sourceLocale")
+                        }
+
+                        Picker("ภาษาเป้าหมาย (คำแปล)", selection: Binding(
                             get: { appState.targetLanguageCode },
                             set: { newCode in
                                 appState.targetLanguage = Locale.Language(identifier: newCode)
                             }
                         )) {
                             ForEach(TranslationManager.supportedTargetLanguages, id: \.code) { lang in
-                                Text(lang.name)
-                                    .tag(lang.code)
+                                Text(lang.name).tag(lang.code)
                             }
                         }
                         .pickerStyle(.navigationLink)
+                        .foregroundStyle(.white.opacity(0.85))
                     } header: {
-                        Text("การแปล")
+                        Text("ภาษา")
                             .foregroundStyle(.white.opacity(0.5))
                     }
                     .listRowBackground(Color.white.opacity(0.06))
 
                     Section {
                         InfoRow(label: "เวอร์ชัน", value: "1.0.0")
-                        InfoRow(label: "iOS ต่ำสุด", value: "17.0")
+                        InfoRow(label: "iOS ต่ำสุด", value: "18.0")
                         InfoRow(label: "การแปล", value: "On-Device")
                         InfoRow(label: "การรู้จำเสียง", value: "On-Device")
                     } header: {
@@ -43,10 +76,21 @@ struct SettingsView: View {
 
                     Section {
                         VStack(alignment: .leading, spacing: 8) {
-                            Text("วิธีใช้ PiP")
+                            Text("วิธีใช้ จับเสียงระบบ")
                                 .font(.system(size: 14, weight: .semibold))
                                 .foregroundStyle(.white)
-                            Text("1. กดปุ่ม PiP (⊞) ที่มุมขวาบน\n2. กดปุ่มไมโครโฟนเพื่อเริ่มพูด\n3. หน้าต่าง PiP จะแสดงคำแปลแบบ floating\n4. สามารถย้ายหน้าต่างได้โดยการลาก\n5. กด Home เพื่อซ่อนแอพ PiP ยังทำงานต่อ")
+                            Text("1. เลือกโหมด \"เสียงระบบ\"\n2. กดปุ่ม Screen Record (วงกลมแดง)\n3. เลือก VoiceTranslator Broadcast\n4. กด \"เริ่ม\" แล้วกลับไปแอพที่ต้องการ\n5. เปิด YouTube / Netflix ตามปกติ\n6. กดปุ่ม PiP ⊞ เพื่อแสดงคำแปลลอยทับหน้าจอ")
+                                .font(.system(size: 13))
+                                .foregroundStyle(.white.opacity(0.6))
+                                .lineSpacing(4)
+                        }
+                        .padding(.vertical, 4)
+
+                        VStack(alignment: .leading, spacing: 8) {
+                            Text("วิธีใช้ ไมโครโฟน")
+                                .font(.system(size: 14, weight: .semibold))
+                                .foregroundStyle(.white)
+                            Text("1. เลือกโหมด \"ไมโครโฟน\"\n2. กดปุ่มไมโครโฟนสีน้ำเงิน\n3. พูดภาษาที่เลือกไว้\n4. คำแปลจะแสดงแบบ real-time\n5. กดปุ่ม PiP ⊞ เพื่อแสดงคำแปลลอยทับ")
                                 .font(.system(size: 13))
                                 .foregroundStyle(.white.opacity(0.6))
                                 .lineSpacing(4)
