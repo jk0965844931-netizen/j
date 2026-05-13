@@ -55,6 +55,19 @@ struct DiagnosticLogEntry: Identifiable {
     let timestamp: Date
 }
 
+struct DiagnosticLogEntry: Identifiable {
+    enum Level: String {
+        case info
+        case warning
+        case error
+    }
+
+    let id = UUID()
+    let level: Level
+    let message: String
+    let timestamp: Date
+}
+
 struct TranslationEntry: Identifiable {
     let id = UUID()
     let originalText: String
