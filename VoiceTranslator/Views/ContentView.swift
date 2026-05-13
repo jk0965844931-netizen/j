@@ -293,6 +293,11 @@ struct ContentView: View {
                     .foregroundStyle(.orange.opacity(0.8))
             }
 
+            Text("บันทึกไฟล์: Files > VoiceTranslator > VoiceTranslatorLogs > voice-translator.log")
+                .font(.system(size: 10))
+                .foregroundStyle(.white.opacity(0.45))
+                .textSelection(.enabled)
+
             if appState.diagnosticLogs.isEmpty {
                 Text("ยังไม่มี log")
                     .font(.system(size: 12))

@@ -21,6 +21,10 @@ class AppState: ObservableObject {
         targetLanguage.languageCode?.identifier ?? "en"
     }
 
+    init() {
+        addLog("เริ่ม session ใหม่; log file: \(DiagnosticLogStore.logFilePath)")
+    }
+
     func addLog(_ message: String, level: DiagnosticLogEntry.Level = .info) {
         let entry = DiagnosticLogEntry(level: level, message: message, timestamp: Date())
         diagnosticLogs.append(entry)
@@ -28,12 +32,27 @@ class AppState: ObservableObject {
             diagnosticLogs.removeFirst(diagnosticLogs.count - 80)
         }
         print("[VoiceTranslator][\(level.rawValue.uppercased())] \(message)")
+        DiagnosticLogStore.append(entry)
     }
 
     func clearLogs() {
         diagnosticLogs.removeAll()
-        addLog("ล้าง log แล้ว")
+        DiagnosticLogStore.clear()
+        addLog("ล้าง log แล้ว; log file: \(DiagnosticLogStore.logFilePath)")
     }
+}
+
+struct DiagnosticLogEntry: Identifiable {
+    enum Level: String {
+        case info
+        case warning
+        case error
+    }
+
+    let id = UUID()
+    let level: Level
+    let message: String
+    let timestamp: Date
 }
 
 struct DiagnosticLogEntry: Identifiable {

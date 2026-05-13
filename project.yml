@@ -32,6 +32,8 @@ targets:
         CFBundleShortVersionString: "1.0"
         NSMicrophoneUsageDescription: "ใช้ไมโครโฟนเพื่อรับฟังเสียงและแปลภาษาแบบเรียลไทม์"
         NSSpeechRecognitionUsageDescription: "ใช้การรู้จำเสียงเพื่อแปลงคำพูดเป็นข้อความบนอุปกรณ์"
+        UIFileSharingEnabled: true
+        LSSupportsOpeningDocumentsInPlace: true
         UIBackgroundModes:
           - audio
         UIApplicationSceneManifest:

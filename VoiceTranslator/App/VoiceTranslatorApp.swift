@@ -25,8 +25,10 @@ struct VoiceTranslatorApp: App {
                 options: [.defaultToSpeaker, .allowBluetooth, .mixWithOthers]
             )
             try session.setActive(true)
+            DiagnosticLogStore.appendRaw("App audio session configured")
         } catch {
             print("Audio session error: \(error)")
+            DiagnosticLogStore.appendRaw("App audio session error: \(error.localizedDescription)", level: .error)
         }
     }
 }
