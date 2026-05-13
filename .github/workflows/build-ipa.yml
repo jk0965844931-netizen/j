@@ -14,9 +14,6 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v4
 
-      - name: Show available Xcode versions
-        run: ls /Applications/ | grep Xcode
-
       - name: Select latest Xcode
         run: |
           XCODE=$(ls /Applications/ | grep "^Xcode" | sort -V | tail -1)
@@ -24,28 +21,17 @@ jobs:
           sudo xcode-select -s "/Applications/$XCODE/Contents/Developer"
           xcodebuild -version
 
-      - name: Install XcodeGen and xcpretty
-        run: |
-          brew install xcodegen
-          gem install xcpretty --no-document
+      - name: Install XcodeGen
+        run: brew install xcodegen
 
       - name: Generate Xcode Project
         run: |
           cd ios-voice-translator
           xcodegen generate
 
-      - name: Resolve Swift Package Dependencies
-        run: |
-          cd ios-voice-translator
-          xcodebuild -resolvePackageDependencies \
-            -project VoiceTranslator.xcodeproj \
-            -scheme VoiceTranslator \
-            -destination "generic/platform=iOS"
-
       - name: Build Archive (Unsigned)
         run: |
           cd ios-voice-translator
-          set -o pipefail
           xcodebuild archive \
             -project VoiceTranslator.xcodeproj \
             -scheme VoiceTranslator \
@@ -55,13 +41,7 @@ jobs:
             CODE_SIGNING_REQUIRED=NO \
             CODE_SIGN_IDENTITY="" \
             PROVISIONING_PROFILE="" \
-            COMPILER_INDEX_STORE_ENABLE=NO \
-            2>&1 | xcpretty
-          echo "Archive status: $?"
-
-      - name: Verify Archive
-        run: |
-          ls -la ios-voice-translator/build/VoiceTranslator.xcarchive/Products/Applications/
+            COMPILER_INDEX_STORE_ENABLE=NO
 
       - name: Package as IPA
         run: |
@@ -71,17 +51,9 @@ jobs:
           zip -r VoiceTranslator-unsigned.ipa Payload/
           echo "IPA size: $(du -sh VoiceTranslator-unsigned.ipa | cut -f1)"
 
-      - name: Upload IPA Artifact
+      - name: Upload IPA
         uses: actions/upload-artifact@v4
         with:
           name: VoiceTranslator-unsigned-${{ github.sha }}
           path: ios-voice-translator/build/VoiceTranslator-unsigned.ipa
-          retention-days: 30
-
-      - name: Upload dSYM
-        if: always()
-        uses: actions/upload-artifact@v4
-        with:
-          name: VoiceTranslator-dSYM-${{ github.sha }}
-          path: ios-voice-translator/build/VoiceTranslator.xcarchive/dSYMs/
           retention-days: 30
