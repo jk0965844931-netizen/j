@@ -1,0 +1,71 @@
+name: Build Unsigned IPA
+
+on:
+  push:
+    branches: [main, master]
+  workflow_dispatch:
+
+jobs:
+  build:
+    runs-on: macos-15
+    timeout-minutes: 60
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Select Xcode
+        run: sudo xcode-select -s /Applications/Xcode_16.app/Contents/Developer
+
+      - name: Install XcodeGen
+        run: brew install xcodegen
+
+      - name: Generate Xcode Project
+        run: |
+          cd ios-voice-translator
+          xcodegen generate
+
+      - name: Resolve Swift Package Dependencies
+        run: |
+          cd ios-voice-translator
+          xcodebuild -resolvePackageDependencies \
+            -project VoiceTranslator.xcodeproj \
+            -scheme VoiceTranslator
+
+      - name: Build Archive (Unsigned)
+        run: |
+          cd ios-voice-translator
+          xcodebuild archive \
+            -project VoiceTranslator.xcodeproj \
+            -scheme VoiceTranslator \
+            -destination "generic/platform=iOS" \
+            -archivePath ./build/VoiceTranslator.xcarchive \
+            CODE_SIGNING_ALLOWED=NO \
+            CODE_SIGNING_REQUIRED=NO \
+            CODE_SIGN_IDENTITY="" \
+            PROVISIONING_PROFILE="" \
+            | xcpretty || true
+
+      - name: Package as IPA
+        run: |
+          cd ios-voice-translator
+          mkdir -p build/Payload
+          cp -r build/VoiceTranslator.xcarchive/Products/Applications/VoiceTranslator.app \
+                build/Payload/VoiceTranslator.app
+          cd build
+          zip -r VoiceTranslator-unsigned.ipa Payload
+          echo "IPA size: $(du -sh VoiceTranslator-unsigned.ipa | cut -f1)"
+
+      - name: Upload IPA Artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: VoiceTranslator-unsigned-${{ github.sha }}
+          path: ios-voice-translator/build/VoiceTranslator-unsigned.ipa
+          retention-days: 30
+
+      - name: Upload dSYM (for crash reporting)
+        uses: actions/upload-artifact@v4
+        with:
+          name: VoiceTranslator-dSYM-${{ github.sha }}
+          path: ios-voice-translator/build/VoiceTranslator.xcarchive/dSYMs/
+          retention-days: 30
