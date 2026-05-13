@@ -7,7 +7,10 @@ class AppState: ObservableObject {
     @Published var recognizedText = ""
     @Published var translatedText = ""
     @Published var detectedLanguage = ""
-    @Published var targetLanguage = Locale.Language(identifier: "en")
+    @Published var targetLanguage = Locale.Language(identifier: "th")
+    @Published var sourceLocaleIdentifier = UserDefaults.standard.string(forKey: "sourceLocale") ?? "en-US" {
+        didSet { UserDefaults.standard.set(sourceLocaleIdentifier, forKey: "sourceLocale") }
+    }
     @Published var isPiPActive = false
     @Published var errorMessage: String?
     @Published var isTranslating = false
@@ -17,9 +20,6 @@ class AppState: ObservableObject {
         targetLanguage.languageCode?.identifier ?? "en"
     }
 
-    var sourceLocaleIdentifier: String {
-        UserDefaults.standard.string(forKey: "sourceLocale") ?? "en-US"
-    }
 }
 
 struct TranslationEntry: Identifiable {

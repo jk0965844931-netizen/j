@@ -31,6 +31,10 @@ struct ContentView: View {
                     mainContent
                     controlBar
                 }
+                PiPHostView(manager: pipManager)
+                    .frame(width: 1, height: 1)
+                    .opacity(0.01)
+                    .accessibilityHidden(true)
             }
             .navigationBarHidden(true)
         }
@@ -41,7 +45,7 @@ struct ContentView: View {
             guard !pendingText.isEmpty else { return }
             do {
                 let response = try await session.translate(pendingText)
-                let detectedLang = translationManager.detectLanguage(from: pendingText)
+                let detectedLang = sourceLanguageCode(from: appState.sourceLocaleIdentifier)
                 await MainActor.run {
                     appState.translatedText = response.targetText
                     appState.isTranslating = false
@@ -65,7 +69,10 @@ struct ContentView: View {
             await requestPermissions()
             setupSpeechManager()
             setupBroadcastManager()
-            pipManager.setupPiP()
+            pipManager.refreshAvailability()
+        }
+        .onChange(of: appState.sourceLocaleIdentifier) { _, newValue in
+            broadcastManager.setSourceLocale(newValue)
         }
         .onDisappear {
             if appState.isRecording { stopMicRecording() }
@@ -202,7 +209,7 @@ struct ContentView: View {
                     .font(.system(size: 13, weight: .medium))
                     .foregroundStyle(broadcastManager.isBroadcasting ? .red : .white.opacity(0.6))
             }
-            Text("แอพจะแปลเสียงจาก YouTube, Netflix และแอพอื่นๆ แบบเรียลไทม์")
+            Text("แปลเสียงจาก YouTube และแอพอื่นๆ ในเครื่องแบบเรียลไทม์ผ่าน Broadcast + PiP")
                 .font(.system(size: 11))
                 .foregroundStyle(.white.opacity(0.35))
         }
@@ -393,7 +400,7 @@ struct ContentView: View {
         broadcastManager.onTextReceived = { text, isFinal in
             Task { @MainActor in
                 appState.recognizedText = text
-                if isFinal || text.count > 30 {
+                if isFinal || text.count > 12 {
                     self.debouncedTranslate(text: text)
                 }
             }
@@ -409,7 +416,7 @@ struct ContentView: View {
             await MainActor.run {
                 appState.isTranslating = true
                 pendingText = text
-                let detectedLang = translationManager.detectLanguage(from: text)
+                let detectedLang = sourceLanguageCode(from: appState.sourceLocaleIdentifier)
                 let sourceLang = Locale.Language(identifier: detectedLang)
                 translationConfig = TranslationSession.Configuration(
                     source: sourceLang,
@@ -417,6 +424,10 @@ struct ContentView: View {
                 )
             }
         }
+    }
+
+    private func sourceLanguageCode(from localeIdentifier: String) -> String {
+        Locale(identifier: localeIdentifier).language.languageCode?.identifier ?? localeIdentifier.components(separatedBy: "-").first ?? "en"
     }
 
     private func saveHistory(original: String, translated: String, detected: String) {
@@ -442,7 +453,7 @@ struct ContentView: View {
         appState.detectedLanguage = ""
         appState.isRecording = true
         do {
-            try await speechManager.startRecording()
+            try await speechManager.startRecording(sourceLocaleIdentifier: appState.sourceLocaleIdentifier)
         } catch {
             appState.isRecording = false
             appState.errorMessage = error.localizedDescription
