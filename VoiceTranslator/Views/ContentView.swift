@@ -74,6 +74,9 @@ struct ContentView: View {
         .onChange(of: appState.sourceLocaleIdentifier) { _, newValue in
             broadcastManager.setSourceLocale(newValue)
         }
+        .onChange(of: appState.sourceLocaleIdentifier) { _, newValue in
+            broadcastManager.setSourceLocale(newValue)
+        }
         .onDisappear {
             if appState.isRecording { stopMicRecording() }
         }
