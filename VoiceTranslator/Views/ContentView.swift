@@ -19,6 +19,13 @@ struct ContentView: View {
 
     enum CaptureMode {
         case microphone, systemAudio
+
+        var logName: String {
+            switch self {
+            case .microphone: return "microphone"
+            case .systemAudio: return "systemAudio"
+            }
+        }
     }
 
     var body: some View {
@@ -56,28 +63,31 @@ struct ContentView: View {
                         detectedLang: detectedLang,
                         targetLang: appState.targetLanguageCode
                     )
+                    appState.addLog("แปลสำเร็จ \(pendingText.count) ตัวอักษร → \(response.targetText.count) ตัวอักษร")
                     saveHistory(original: pendingText, translated: response.targetText, detected: detectedLang)
                 }
             } catch {
                 await MainActor.run {
                     appState.isTranslating = false
                     appState.errorMessage = error.localizedDescription
+                    appState.addLog("Translation error: \(error.localizedDescription)", level: .error)
                 }
             }
         }
         .task {
+            setupDiagnostics()
+            appState.addLog("เริ่มต้น ContentView mode=\(captureMode.logName) source=\(appState.sourceLocaleIdentifier) target=\(appState.targetLanguageCode)")
             await requestPermissions()
             setupSpeechManager()
             setupBroadcastManager()
             pipManager.refreshAvailability()
         }
         .onChange(of: appState.sourceLocaleIdentifier) { _, newValue in
-            broadcastManager.setSourceLocale(newValue)
-        }
-        .onChange(of: appState.sourceLocaleIdentifier) { _, newValue in
+            appState.addLog("เปลี่ยนภาษาต้นฉบับเป็น \(newValue)")
             broadcastManager.setSourceLocale(newValue)
         }
         .onDisappear {
+            appState.addLog("ContentView onDisappear")
             if appState.isRecording { stopMicRecording() }
         }
     }
@@ -194,6 +204,7 @@ struct ContentView: View {
                 if captureMode == .systemAudio {
                     systemAudioInfoCard
                 }
+                diagnosticLogCard
                 transcriptCard
                 translationCard
                 if !appState.translationHistory.isEmpty { historySection }
@@ -268,6 +279,33 @@ struct ContentView: View {
         .padding(.horizontal, 16).padding(.vertical, 12)
         .background(.white.opacity(0.05), in: RoundedRectangle(cornerRadius: 14, style: .continuous))
         .overlay(RoundedRectangle(cornerRadius: 14, style: .continuous).stroke(.white.opacity(0.08), lineWidth: 0.5))
+    }
+
+    private var diagnosticLogCard: some View {
+        VStack(alignment: .leading, spacing: 10) {
+            HStack {
+                Label("Diagnostic Log", systemImage: "stethoscope")
+                    .font(.system(size: 12, weight: .semibold))
+                    .foregroundStyle(.orange.opacity(0.9))
+                Spacer()
+                Button("ล้าง") { appState.clearLogs() }
+                    .font(.system(size: 11, weight: .medium))
+                    .foregroundStyle(.orange.opacity(0.8))
+            }
+
+            if appState.diagnosticLogs.isEmpty {
+                Text("ยังไม่มี log")
+                    .font(.system(size: 12))
+                    .foregroundStyle(.white.opacity(0.35))
+            } else {
+                ForEach(appState.diagnosticLogs.suffix(8).reversed()) { entry in
+                    DiagnosticLogRow(entry: entry)
+                }
+            }
+        }
+        .padding(14)
+        .background(.black.opacity(0.22), in: RoundedRectangle(cornerRadius: 14, style: .continuous))
+        .overlay(RoundedRectangle(cornerRadius: 14, style: .continuous).stroke(Color.orange.opacity(0.25), lineWidth: 0.5))
     }
 
     private var transcriptCard: some View {
@@ -381,8 +419,16 @@ struct ContentView: View {
         }
     }
 
+    private func setupDiagnostics() {
+        pipManager.onLog = { message, level in
+            appState.addLog("PiP: \(message)", level: level)
+        }
+    }
+
     private func requestPermissions() async {
+        appState.addLog("กำลังขอสิทธิ์ไมโครโฟน/รู้จำเสียง")
         hasPermissions = await speechManager.requestPermissions()
+        appState.addLog(hasPermissions ? "ได้รับสิทธิ์ไมโครโฟน/รู้จำเสียงแล้ว" : "ไม่ได้รับสิทธิ์ไมโครโฟนหรือรู้จำเสียง", level: hasPermissions ? .info : .error)
     }
 
     private func setupSpeechManager() {
@@ -390,19 +436,25 @@ struct ContentView: View {
             Task { @MainActor in
                 appState.recognizedText = text
                 appState.detectedLanguage = langCode
+                appState.addLog("Mic transcript lang=\(langCode) chars=\(text.count)")
                 self.debouncedTranslate(text: text)
             }
         }
         speechManager.onError = { error in
-            Task { @MainActor in appState.errorMessage = error }
+            Task { @MainActor in
+                appState.errorMessage = error
+                appState.addLog("Speech error: \(error)", level: .error)
+            }
         }
     }
 
     private func setupBroadcastManager() {
         broadcastManager.setSourceLocale(appState.sourceLocaleIdentifier)
+        appState.addLog("ตั้งค่า Broadcast sourceLocale=\(appState.sourceLocaleIdentifier)")
         broadcastManager.onTextReceived = { text, isFinal in
             Task { @MainActor in
                 appState.recognizedText = text
+                appState.addLog("Broadcast transcript chars=\(text.count) final=\(isFinal)")
                 if isFinal || text.count > 12 {
                     self.debouncedTranslate(text: text)
                 }
@@ -420,6 +472,7 @@ struct ContentView: View {
                 appState.isTranslating = true
                 pendingText = text
                 let detectedLang = sourceLanguageCode(from: appState.sourceLocaleIdentifier)
+                appState.addLog("เริ่มแปล source=\(detectedLang) target=\(appState.targetLanguageCode) chars=\(text.count)")
                 let sourceLang = Locale.Language(identifier: detectedLang)
                 translationConfig = TranslationSession.Configuration(
                     source: sourceLang,
@@ -455,17 +508,52 @@ struct ContentView: View {
         appState.translatedText = ""
         appState.detectedLanguage = ""
         appState.isRecording = true
+        appState.addLog("เริ่มอัดเสียงไมโครโฟน locale=\(appState.sourceLocaleIdentifier)")
         do {
             try await speechManager.startRecording(sourceLocaleIdentifier: appState.sourceLocaleIdentifier)
+            appState.addLog("เริ่มไมโครโฟนสำเร็จ")
         } catch {
             appState.isRecording = false
             appState.errorMessage = error.localizedDescription
+            appState.addLog("เริ่มไมโครโฟนไม่สำเร็จ: \(error.localizedDescription)", level: .error)
         }
     }
 
     private func stopMicRecording() {
         speechManager.stopRecording()
         appState.isRecording = false
+        appState.addLog("หยุดไมโครโฟน")
+    }
+}
+
+struct DiagnosticLogRow: View {
+    let entry: DiagnosticLogEntry
+
+    var body: some View {
+        HStack(alignment: .top, spacing: 8) {
+            Circle()
+                .fill(levelColor)
+                .frame(width: 7, height: 7)
+                .padding(.top, 5)
+            VStack(alignment: .leading, spacing: 2) {
+                Text(entry.message)
+                    .font(.system(size: 11, weight: .medium))
+                    .foregroundStyle(.white.opacity(0.82))
+                    .lineLimit(2)
+                Text(entry.timestamp, style: .time)
+                    .font(.system(size: 9, weight: .regular, design: .monospaced))
+                    .foregroundStyle(.white.opacity(0.35))
+            }
+            Spacer(minLength: 0)
+        }
+    }
+
+    private var levelColor: Color {
+        switch entry.level {
+        case .info: return .blue
+        case .warning: return .yellow
+        case .error: return .red
+        }
     }
 }
 
