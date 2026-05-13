@@ -4,8 +4,6 @@ struct SettingsView: View {
     @EnvironmentObject var appState: AppState
     @Environment(\.dismiss) var dismiss
 
-    @State private var selectedSourceLocale: String = UserDefaults.standard.string(forKey: "sourceLocale") ?? "en-US"
-
     static let sourceLocales: [(id: String, name: String)] = [
         ("en-US", "🇺🇸 อังกฤษ (US)"),
         ("en-GB", "🇬🇧 อังกฤษ (UK)"),
@@ -34,17 +32,13 @@ struct SettingsView: View {
 
                 List {
                     Section {
-                        Picker("ภาษาต้นฉบับ (เสียงที่ฟัง)", selection: $selectedSourceLocale) {
+                        Picker("ภาษาต้นฉบับ (เสียงที่ฟัง)", selection: $appState.sourceLocaleIdentifier) {
                             ForEach(Self.sourceLocales, id: \.id) { lang in
                                 Text(lang.name).tag(lang.id)
                             }
                         }
                         .pickerStyle(.navigationLink)
                         .foregroundStyle(.white.opacity(0.85))
-                        .onChange(of: selectedSourceLocale) { _, newVal in
-                            UserDefaults.standard.set(newVal, forKey: "sourceLocale")
-                        }
-
                         Picker("ภาษาเป้าหมาย (คำแปล)", selection: Binding(
                             get: { appState.targetLanguageCode },
                             set: { newCode in

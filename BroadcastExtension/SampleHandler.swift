@@ -30,7 +30,7 @@ class SampleHandler: RPBroadcastSampleHandler {
         guard let request = recognitionRequest,
               let recognizer = speechRecognizer, recognizer.isAvailable else { return }
 
-        request.requiresOnDeviceRecognition = true
+        request.requiresOnDeviceRecognition = recognizer.supportsOnDeviceRecognition
         request.shouldReportPartialResults = true
         request.addsPunctuation = false
 

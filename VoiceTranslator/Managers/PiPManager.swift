@@ -1,5 +1,6 @@
 import AVKit
 import AVFoundation
+import SwiftUI
 import UIKit
 
 @MainActor
@@ -10,6 +11,7 @@ class PiPManager: NSObject, ObservableObject {
 
     private var pipController: AVPictureInPictureController?
     private var displayLayer: AVSampleBufferDisplayLayer?
+    private var displayTimebase: CMTimebase?
 
     private var currentOriginalText = ""
     private var currentTranslatedText = ""
@@ -29,9 +31,8 @@ class PiPManager: NSObject, ObservableObject {
 
         activateAudioSession()
 
-        let layer = AVSampleBufferDisplayLayer()
-        layer.videoGravity = .resizeAspect
-        layer.backgroundColor = UIColor.black.cgColor
+        let layer = displayLayer ?? AVSampleBufferDisplayLayer()
+        configureDisplayLayer(layer)
         self.displayLayer = layer
 
         let contentSource = AVPictureInPictureController.ContentSource(
@@ -61,6 +62,43 @@ class PiPManager: NSObject, ObservableObject {
         }
     }
 
+    private func configureDisplayLayer(_ layer: AVSampleBufferDisplayLayer) {
+        layer.videoGravity = .resizeAspect
+        layer.backgroundColor = UIColor.black.cgColor
+
+        var timebase: CMTimebase?
+        CMTimebaseCreateWithSourceClock(
+            allocator: kCFAllocatorDefault,
+            sourceClock: CMClockGetHostTimeClock(),
+            timebaseOut: &timebase
+        )
+        if let timebase {
+            CMTimebaseSetTime(timebase, time: .zero)
+            CMTimebaseSetRate(timebase, rate: 1.0)
+            layer.controlTimebase = timebase
+            displayTimebase = timebase
+        }
+    }
+
+    func attachDisplayLayer(to hostView: UIView) {
+        let layer = displayLayer ?? AVSampleBufferDisplayLayer()
+        configureDisplayLayer(layer)
+        displayLayer = layer
+
+        if layer.superlayer !== hostView.layer {
+            layer.removeFromSuperlayer()
+            hostView.layer.addSublayer(layer)
+        }
+        layer.frame = hostView.bounds
+
+        if pipController == nil {
+            setupPiP()
+        } else {
+            pushFrame()
+            isPiPPossible = pipController?.isPictureInPicturePossible ?? false
+        }
+    }
+
     func updateContent(original: String, translated: String, detectedLang: String, targetLang: String) {
         currentOriginalText = original
         currentTranslatedText = translated
@@ -70,13 +108,15 @@ class PiPManager: NSObject, ObservableObject {
     }
 
     func startPiP() {
+        if pipController == nil { setupPiP() }
         activateAudioSession()
         pushFrame()
+
         DispatchQueue.main.asyncAfter(deadline: .now() + 0.3) { [weak self] in
             guard let self, let pip = self.pipController else { return }
-            if pip.isPictureInPicturePossible {
-                pip.startPictureInPicture()
-            }
+            self.isPiPPossible = pip.isPictureInPicturePossible
+            guard pip.isPictureInPicturePossible else { return }
+            pip.startPictureInPicture()
         }
     }
 
@@ -221,7 +261,29 @@ class PiPManager: NSObject, ObservableObject {
             sampleTiming: &timing,
             sampleBufferOut: &sb
         )
+
+        if let sb,
+           let attachments = CMSampleBufferGetSampleAttachmentsArray(sb, createIfNecessary: true) as? NSMutableArray,
+           let first = attachments.firstObject as? NSMutableDictionary {
+            first[kCMSampleAttachmentKey_DisplayImmediately] = true
+        }
         return sb
+    }
+}
+
+@MainActor
+struct PiPHostView: UIViewRepresentable {
+    @ObservedObject var manager: PiPManager
+
+    func makeUIView(context: Context) -> UIView {
+        let view = UIView(frame: CGRect(x: 0, y: 0, width: 360, height: 200))
+        view.backgroundColor = .black
+        manager.attachDisplayLayer(to: view)
+        return view
+    }
+
+    func updateUIView(_ uiView: UIView, context: Context) {
+        manager.attachDisplayLayer(to: uiView)
     }
 }
 
