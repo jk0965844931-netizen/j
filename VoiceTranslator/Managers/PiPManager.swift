@@ -1,16 +1,15 @@
 import AVKit
+import AVFoundation
 import UIKit
-import SwiftUI
 
 @MainActor
 class PiPManager: NSObject, ObservableObject {
     @Published var isPiPActive = false
     @Published var isPiPAvailable = false
+    @Published var isPiPPossible = false
 
     private var pipController: AVPictureInPictureController?
-    private var sampleBufferDisplayLayer: AVSampleBufferDisplayLayer?
-    private var pipContentView: UIView?
-    private var containerView: UIView?
+    private var displayLayer: AVSampleBufferDisplayLayer?
 
     private var currentOriginalText = ""
     private var currentTranslatedText = ""
@@ -19,25 +18,47 @@ class PiPManager: NSObject, ObservableObject {
 
     override init() {
         super.init()
-        isPiPAvailable = AVPictureInPictureController.isPictureInPictureSupported()
     }
 
     func setupPiP() {
-        guard AVPictureInPictureController.isPictureInPictureSupported() else { return }
+        guard AVPictureInPictureController.isPictureInPictureSupported() else {
+            isPiPAvailable = false
+            return
+        }
+        isPiPAvailable = true
 
-        let displayLayer = AVSampleBufferDisplayLayer()
-        displayLayer.videoGravity = .resizeAspect
-        self.sampleBufferDisplayLayer = displayLayer
+        activateAudioSession()
+
+        let layer = AVSampleBufferDisplayLayer()
+        layer.videoGravity = .resizeAspect
+        layer.backgroundColor = UIColor.black.cgColor
+        self.displayLayer = layer
 
         let contentSource = AVPictureInPictureController.ContentSource(
-            sampleBufferDisplayLayer: displayLayer,
+            sampleBufferDisplayLayer: layer,
             playbackDelegate: self
         )
+
         let pip = AVPictureInPictureController(contentSource: contentSource)
         pip.delegate = self
         pip.requiresLinearPlayback = true
-        pip.canStartPictureInPictureAutomaticallyFromInline = true
+        pip.canStartPictureInPictureAutomaticallyFromInline = false
         self.pipController = pip
+
+        pushBlankFrame()
+
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.5) { [weak self] in
+            self?.isPiPPossible = pip.isPictureInPicturePossible
+        }
+    }
+
+    private func activateAudioSession() {
+        do {
+            let session = AVAudioSession.sharedInstance()
+            try session.setCategory(.playback, options: [.mixWithOthers])
+            try session.setActive(true)
+        } catch {
+        }
     }
 
     func updateContent(original: String, translated: String, detectedLang: String, targetLang: String) {
@@ -45,186 +66,181 @@ class PiPManager: NSObject, ObservableObject {
         currentTranslatedText = translated
         currentDetectedLanguage = detectedLang
         currentTargetLanguage = targetLang
-
-        pushFrameToLayer()
+        pushFrame()
     }
 
     func startPiP() {
-        guard let pipController, pipController.isPictureInPicturePossible else { return }
-        pushFrameToLayer()
-        pipController.startPictureInPicture()
+        activateAudioSession()
+        pushFrame()
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.3) { [weak self] in
+            guard let self, let pip = self.pipController else { return }
+            if pip.isPictureInPicturePossible {
+                pip.startPictureInPicture()
+            }
+        }
     }
 
     func stopPiP() {
         pipController?.stopPictureInPicture()
     }
 
-    private func pushFrameToLayer() {
-        guard let layer = sampleBufferDisplayLayer else { return }
+    private func pushBlankFrame() {
+        currentTranslatedText = ""
+        currentOriginalText = ""
+        pushFrame()
+    }
+
+    private func pushFrame() {
+        guard let layer = displayLayer else { return }
 
         let size = CGSize(width: 360, height: 200)
         let renderer = UIGraphicsImageRenderer(size: size)
         let image = renderer.image { ctx in
-            drawOverlayContent(in: ctx.cgContext, size: size)
+            drawOverlay(in: ctx.cgContext, size: size)
         }
 
-        guard let pixelBuffer = createPixelBuffer(from: image, size: size),
-              let sampleBuffer = createSampleBuffer(from: pixelBuffer) else { return }
+        guard let pixelBuffer = makePixelBuffer(from: image, size: size),
+              let sampleBuffer = makeSampleBuffer(from: pixelBuffer) else { return }
 
+        if layer.status == .failed {
+            layer.flush()
+        }
         layer.enqueue(sampleBuffer)
     }
 
-    private func drawOverlayContent(in context: CGContext, size: CGSize) {
-        let bgColor = UIColor(red: 0.05, green: 0.07, blue: 0.12, alpha: 0.95)
-        bgColor.setFill()
-        let bgRect = CGRect(origin: .zero, size: size)
-        let bgPath = UIBezierPath(roundedRect: bgRect, cornerRadius: 16)
-        bgPath.fill()
+    private func drawOverlay(in ctx: CGContext, size: CGSize) {
+        let bg = UIColor(red: 0.04, green: 0.06, blue: 0.12, alpha: 0.96)
+        bg.setFill()
+        let path = UIBezierPath(roundedRect: CGRect(origin: .zero, size: size), cornerRadius: 14)
+        path.fill()
 
-        let accentColor = UIColor(red: 0.35, green: 0.65, blue: 1.0, alpha: 1.0)
-        let indicatorRect = CGRect(x: 16, y: 16, width: 4, height: size.height - 32)
-        let indicatorPath = UIBezierPath(roundedRect: indicatorRect, cornerRadius: 2)
-        accentColor.setFill()
-        indicatorPath.fill()
+        let accent = UIColor(red: 0.3, green: 0.6, blue: 1.0, alpha: 1.0)
+        accent.setFill()
+        let bar = UIBezierPath(roundedRect: CGRect(x: 14, y: 14, width: 4, height: size.height - 28), cornerRadius: 2)
+        bar.fill()
 
-        let langText = currentDetectedLanguage.isEmpty ? "" : "🌐 \(langDisplayName(currentDetectedLanguage)) → \(langDisplayName(currentTargetLanguage))"
-        let langAttrs: [NSAttributedString.Key: Any] = [
+        let dim = UIColor(white: 0.55, alpha: 1.0)
+        let dimAttrs: [NSAttributedString.Key: Any] = [
             .font: UIFont.systemFont(ofSize: 11, weight: .medium),
-            .foregroundColor: UIColor(white: 0.6, alpha: 1.0)
+            .foregroundColor: dim
         ]
-        let langStr = NSAttributedString(string: langText, attributes: langAttrs)
-        langStr.draw(at: CGPoint(x: 28, y: 18))
+
+        if !currentDetectedLanguage.isEmpty {
+            let langLine = "🌐 \(langName(currentDetectedLanguage)) → \(langName(currentTargetLanguage))"
+            NSAttributedString(string: langLine, attributes: dimAttrs).draw(at: CGPoint(x: 26, y: 16))
+        }
 
         if !currentOriginalText.isEmpty {
             let origAttrs: [NSAttributedString.Key: Any] = [
-                .font: UIFont.systemFont(ofSize: 13, weight: .regular),
-                .foregroundColor: UIColor(white: 0.72, alpha: 1.0)
+                .font: UIFont.systemFont(ofSize: 12, weight: .regular),
+                .foregroundColor: UIColor(white: 0.65, alpha: 1.0)
             ]
-            let clampedOrig = String(currentOriginalText.prefix(80))
-            let origStr = NSAttributedString(string: clampedOrig, attributes: origAttrs)
-            let origRect = CGRect(x: 28, y: 40, width: size.width - 44, height: 36)
-            origStr.draw(in: origRect)
+            let clipped = String(currentOriginalText.prefix(100))
+            NSAttributedString(string: clipped, attributes: origAttrs)
+                .draw(in: CGRect(x: 26, y: 38, width: size.width - 40, height: 34))
         }
 
-        let separator = UIBezierPath()
-        separator.move(to: CGPoint(x: 28, y: 84))
-        separator.addLine(to: CGPoint(x: size.width - 16, y: 84))
-        UIColor(white: 0.25, alpha: 1.0).setStroke()
-        separator.lineWidth = 0.5
-        separator.stroke()
+        let sepPath = UIBezierPath()
+        sepPath.move(to: CGPoint(x: 26, y: 82))
+        sepPath.addLine(to: CGPoint(x: size.width - 14, y: 82))
+        UIColor(white: 0.22, alpha: 1.0).setStroke()
+        sepPath.lineWidth = 0.5
+        sepPath.stroke()
 
         let transText = currentTranslatedText.isEmpty ? "รอการแปล..." : currentTranslatedText
+        let transColor: UIColor = currentTranslatedText.isEmpty ? UIColor(white: 0.35, alpha: 1.0) : .white
         let transAttrs: [NSAttributedString.Key: Any] = [
-            .font: UIFont.systemFont(ofSize: 16, weight: .semibold),
-            .foregroundColor: UIColor.white
+            .font: UIFont.systemFont(ofSize: 17, weight: .semibold),
+            .foregroundColor: transColor
         ]
-        let clampedTrans = String(transText.prefix(120))
-        let transStr = NSAttributedString(string: clampedTrans, attributes: transAttrs)
-        let transRect = CGRect(x: 28, y: 94, width: size.width - 44, height: 88)
-        transStr.draw(in: transRect)
+        let clipped = String(transText.prefix(140))
+        NSAttributedString(string: clipped, attributes: transAttrs)
+            .draw(in: CGRect(x: 26, y: 92, width: size.width - 40, height: 92))
     }
 
-    private func langDisplayName(_ code: String) -> String {
-        let locale = Locale(identifier: "th")
-        return locale.localizedString(forLanguageCode: code) ?? code.uppercased()
+    private func langName(_ code: String) -> String {
+        Locale(identifier: "th").localizedString(forLanguageCode: code) ?? code.uppercased()
     }
 
-    private func createPixelBuffer(from image: UIImage, size: CGSize) -> CVPixelBuffer? {
-        var pixelBuffer: CVPixelBuffer?
+    private func makePixelBuffer(from image: UIImage, size: CGSize) -> CVPixelBuffer? {
+        var buf: CVPixelBuffer?
         let attrs: [CFString: Any] = [
             kCVPixelBufferCGImageCompatibilityKey: true,
             kCVPixelBufferCGBitmapContextCompatibilityKey: true
         ]
-        let status = CVPixelBufferCreate(
+        guard CVPixelBufferCreate(
             kCFAllocatorDefault,
-            Int(size.width),
-            Int(size.height),
+            Int(size.width), Int(size.height),
             kCVPixelFormatType_32ARGB,
-            attrs as CFDictionary,
-            &pixelBuffer
-        )
-        guard status == kCVReturnSuccess, let buffer = pixelBuffer else { return nil }
+            attrs as CFDictionary, &buf
+        ) == kCVReturnSuccess, let buf else { return nil }
 
-        CVPixelBufferLockBaseAddress(buffer, [])
-        defer { CVPixelBufferUnlockBaseAddress(buffer, []) }
+        CVPixelBufferLockBaseAddress(buf, [])
+        defer { CVPixelBufferUnlockBaseAddress(buf, []) }
 
-        guard let context = CGContext(
-            data: CVPixelBufferGetBaseAddress(buffer),
-            width: Int(size.width),
-            height: Int(size.height),
+        guard let ctx = CGContext(
+            data: CVPixelBufferGetBaseAddress(buf),
+            width: Int(size.width), height: Int(size.height),
             bitsPerComponent: 8,
-            bytesPerRow: CVPixelBufferGetBytesPerRow(buffer),
+            bytesPerRow: CVPixelBufferGetBytesPerRow(buf),
             space: CGColorSpaceCreateDeviceRGB(),
             bitmapInfo: CGImageAlphaInfo.noneSkipFirst.rawValue
         ) else { return nil }
 
-        context.translateBy(x: 0, y: size.height)
-        context.scaleBy(x: 1.0, y: -1.0)
-        UIGraphicsPushContext(context)
+        ctx.translateBy(x: 0, y: size.height)
+        ctx.scaleBy(x: 1.0, y: -1.0)
+        UIGraphicsPushContext(ctx)
         image.draw(in: CGRect(origin: .zero, size: size))
         UIGraphicsPopContext()
-
-        return buffer
+        return buf
     }
 
-    private func createSampleBuffer(from pixelBuffer: CVPixelBuffer) -> CMSampleBuffer? {
-        var formatDescription: CMVideoFormatDescription?
+    private func makeSampleBuffer(from pixelBuffer: CVPixelBuffer) -> CMSampleBuffer? {
+        var fmt: CMVideoFormatDescription?
         CMVideoFormatDescriptionCreateForImageBuffer(
             allocator: kCFAllocatorDefault,
             imageBuffer: pixelBuffer,
-            formatDescriptionOut: &formatDescription
+            formatDescriptionOut: &fmt
         )
-        guard let formatDesc = formatDescription else { return nil }
+        guard let fmt else { return nil }
 
-        var timingInfo = CMSampleTimingInfo(
+        var timing = CMSampleTimingInfo(
             duration: CMTime(value: 1, timescale: 30),
             presentationTimeStamp: CMClockGetTime(CMClockGetHostTimeClock()),
             decodeTimeStamp: .invalid
         )
 
-        var sampleBuffer: CMSampleBuffer?
+        var sb: CMSampleBuffer?
         CMSampleBufferCreateForImageBuffer(
             allocator: kCFAllocatorDefault,
             imageBuffer: pixelBuffer,
             dataReady: true,
             makeDataReadyCallback: nil,
             refcon: nil,
-            formatDescription: formatDesc,
-            sampleTiming: &timingInfo,
-            sampleBufferOut: &sampleBuffer
+            formatDescription: fmt,
+            sampleTiming: &timing,
+            sampleBufferOut: &sb
         )
-        return sampleBuffer
+        return sb
     }
 }
 
 extension PiPManager: AVPictureInPictureControllerDelegate {
-    nonisolated func pictureInPictureControllerWillStartPictureInPicture(_ pictureInPictureController: AVPictureInPictureController) {
+    nonisolated func pictureInPictureControllerWillStartPictureInPicture(_ c: AVPictureInPictureController) {
         Task { @MainActor in self.isPiPActive = true }
     }
-
-    nonisolated func pictureInPictureControllerDidStopPictureInPicture(_ pictureInPictureController: AVPictureInPictureController) {
+    nonisolated func pictureInPictureControllerDidStopPictureInPicture(_ c: AVPictureInPictureController) {
         Task { @MainActor in self.isPiPActive = false }
     }
-
-    nonisolated func pictureInPictureController(_ pictureInPictureController: AVPictureInPictureController, failedToStartPictureInPictureWithError error: Error) {
-        print("PiP failed: \(error)")
-    }
+    nonisolated func pictureInPictureController(_ c: AVPictureInPictureController, failedToStartPictureInPictureWithError error: Error) {}
 }
 
 extension PiPManager: AVPictureInPictureSampleBufferPlaybackDelegate {
-    nonisolated func pictureInPictureController(_ pictureInPictureController: AVPictureInPictureController, setPlaying playing: Bool) {}
-
-    nonisolated func pictureInPictureControllerTimeRangeForPlayback(_ pictureInPictureController: AVPictureInPictureController) -> CMTimeRange {
+    nonisolated func pictureInPictureController(_ c: AVPictureInPictureController, setPlaying playing: Bool) {}
+    nonisolated func pictureInPictureControllerTimeRangeForPlayback(_ c: AVPictureInPictureController) -> CMTimeRange {
         CMTimeRange(start: .negativeInfinity, duration: .positiveInfinity)
     }
-
-    nonisolated func pictureInPictureControllerIsPlaybackPaused(_ pictureInPictureController: AVPictureInPictureController) -> Bool {
-        false
-    }
-
-    nonisolated func pictureInPictureController(_ pictureInPictureController: AVPictureInPictureController, didTransitionToRenderSize newRenderSize: CMVideoDimensions) {}
-
-    nonisolated func pictureInPictureController(_ pictureInPictureController: AVPictureInPictureController, skipByInterval skipInterval: CMTime, completion completionHandler: @escaping () -> Void) {
-        completionHandler()
-    }
+    nonisolated func pictureInPictureControllerIsPlaybackPaused(_ c: AVPictureInPictureController) -> Bool { false }
+    nonisolated func pictureInPictureController(_ c: AVPictureInPictureController, didTransitionToRenderSize s: CMVideoDimensions) {}
+    nonisolated func pictureInPictureController(_ c: AVPictureInPictureController, skipByInterval i: CMTime, completion h: @escaping () -> Void) { h() }
 }
