@@ -39,20 +39,19 @@ class SpeechManager: ObservableObject {
         return micStatus
     }
 
-    func startRecording() async throws {
+    func startRecording(sourceLocaleIdentifier: String) async throws {
         stopRecording()
 
-        let locale = Locale(identifier: "th-TH")
+        let locale = Locale(identifier: sourceLocaleIdentifier)
         guard let recognizer = SFSpeechRecognizer(locale: locale),
               recognizer.isAvailable else {
             throw SpeechError.recognizerUnavailable
         }
         recognizer.defaultTaskHint = .dictation
-        recognizer.supportsOnDeviceRecognition = true
         currentRecognizer = recognizer
 
         let request = SFSpeechAudioBufferRecognitionRequest()
-        request.requiresOnDeviceRecognition = false
+        request.requiresOnDeviceRecognition = recognizer.supportsOnDeviceRecognition
         request.shouldReportPartialResults = true
         request.contextualStrings = []
         recognitionRequest = request

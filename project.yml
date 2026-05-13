@@ -32,6 +32,8 @@ targets:
         CFBundleShortVersionString: "1.0"
         NSMicrophoneUsageDescription: "ใช้ไมโครโฟนเพื่อรับฟังเสียงและแปลภาษาแบบเรียลไทม์"
         NSSpeechRecognitionUsageDescription: "ใช้การรู้จำเสียงเพื่อแปลงคำพูดเป็นข้อความบนอุปกรณ์"
+        UIFileSharingEnabled: true
+        LSSupportsOpeningDocumentsInPlace: true
         UIBackgroundModes:
           - audio
         UIApplicationSceneManifest:
@@ -82,6 +84,8 @@ targets:
           NSExtensionPrincipalClass: $(PRODUCT_MODULE_NAME).SampleHandler
     settings:
       base:
+        PRODUCT_NAME: BroadcastExtension
+        PRODUCT_MODULE_NAME: BroadcastExtension
         PRODUCT_BUNDLE_IDENTIFIER: com.voicetranslator.app.broadcast
         INFOPLIST_FILE: BroadcastExtension/Info.plist
         CODE_SIGNING_ALLOWED: NO
