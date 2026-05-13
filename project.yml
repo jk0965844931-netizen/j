@@ -2,7 +2,7 @@ name: VoiceTranslator
 options:
   bundleIdPrefix: com.voicetranslator
   deploymentTarget:
-    iOS: "17.4"
+    iOS: "18.0"
   xcodeVersion: "15.0"
 
 settings:
