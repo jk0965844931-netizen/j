@@ -26,12 +26,11 @@ jobs:
 
       - name: Generate Xcode Project
         run: |
-          cd ios-voice-translator
           xcodegen generate
+          ls -la
 
       - name: Build Archive (Unsigned)
         run: |
-          cd ios-voice-translator
           xcodebuild archive \
             -project VoiceTranslator.xcodeproj \
             -scheme VoiceTranslator \
@@ -45,7 +44,7 @@ jobs:
 
       - name: Package as IPA
         run: |
-          cd ios-voice-translator/build
+          cd build
           mkdir -p Payload
           cp -r VoiceTranslator.xcarchive/Products/Applications/VoiceTranslator.app Payload/
           zip -r VoiceTranslator-unsigned.ipa Payload/
@@ -55,5 +54,5 @@ jobs:
         uses: actions/upload-artifact@v4
         with:
           name: VoiceTranslator-unsigned-${{ github.sha }}
-          path: ios-voice-translator/build/VoiceTranslator-unsigned.ipa
+          path: build/VoiceTranslator-unsigned.ipa
           retention-days: 30
