@@ -1,0 +1,102 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <meta name="theme-color" content="#eef6f5">
+  <title>Babelfish Live</title>
+  <link rel="stylesheet" href="./styles.css">
+</head>
+<body>
+  <main class="app-shell">
+    <header class="hero">
+      <h1>Babelfish Live</h1>
+      <p id="deviceHint">Browser detected: guided room-mic flow enabled</p>
+    </header>
+
+    <section class="room-card" aria-label="Room information">
+      <span>Room</span>
+      <strong id="roomId">--------</strong>
+    </section>
+
+    <section class="panel control-panel" aria-label="Translation controls">
+      <div class="panel-title">
+        <h2>One-device translation</h2>
+        <span id="presence">1 device connected</span>
+      </div>
+
+      <div class="segmented" role="group" aria-label="Translation mode">
+        <button class="active" id="autoMode" type="button">Auto</button>
+        <button id="oneDeviceMode" type="button">One device</button>
+        <button id="captureButton" type="button">Capture mic</button>
+        <button id="listenButton" type="button">Listen</button>
+      </div>
+
+      <p class="guidance" id="flowGuidance">
+        iPhone flow: use AirPods for playback, place the phone near the room speaker, and use Standard or Wide Spectrum mic mode. One-device mode captures and plays on this device.
+      </p>
+
+      <label class="field-label" for="sourceLanguage">Microphone</label>
+      <select id="sourceLanguage">
+        <option value="en-US">English Microphone</option>
+        <option value="th-TH">Thai Microphone</option>
+        <option value="ja-JP">Japanese Microphone</option>
+        <option value="ko-KR">Korean Microphone</option>
+        <option value="zh-CN">Chinese Microphone</option>
+        <option value="es-ES">Spanish Microphone</option>
+        <option value="fr-FR">French Microphone</option>
+        <option value="de-DE">German Microphone</option>
+      </select>
+
+      <label class="field-label" for="targetLanguage">Audio output</label>
+      <select id="targetLanguage">
+        <option value="th">Default - Thai</option>
+        <option value="en">Default - English</option>
+        <option value="ja">Default - Japanese</option>
+        <option value="ko">Default - Korean</option>
+        <option value="zh">Default - Chinese</option>
+        <option value="es">Default - Spanish</option>
+        <option value="fr">Default - French</option>
+        <option value="de">Default - German</option>
+      </select>
+
+      <button class="secondary full" id="refreshDevices" type="button">Refresh devices</button>
+
+      <div class="meter-heading">
+        <span>Room input</span>
+        <span id="roomState">quiet</span>
+      </div>
+      <div class="meter" aria-hidden="true"><i id="levelBar"></i></div>
+
+      <div class="action-row">
+        <button class="primary" id="startButton" type="button">Start</button>
+        <button class="secondary" id="copyLink" type="button">Copy room link</button>
+      </div>
+
+      <details class="advanced">
+        <summary>Translation engine</summary>
+        <p>Uses the browser Translator API when available. Add any LibreTranslate-compatible endpoint below for server-backed translation; otherwise a small built-in phrasebook keeps demos usable.</p>
+        <input id="translatorEndpoint" type="url" placeholder="https://your-libretranslate.example/translate">
+      </details>
+    </section>
+
+    <section class="panel transcript-panel" aria-live="polite">
+      <div class="language-line" id="sourceName">English</div>
+      <p id="sourceText">Hello, how are you?</p>
+      <div class="divider"></div>
+      <div class="language-line target" id="targetName">Thai</div>
+      <p id="translatedText">สวัสดี คุณสบายดีไหม?</p>
+    </section>
+
+    <section class="panel history-panel">
+      <div class="panel-title compact">
+        <h2>History</h2>
+        <button id="clearHistory" type="button">Clear</button>
+      </div>
+      <ol id="historyList"></ol>
+    </section>
+  </main>
+  <div id="toast" role="status" aria-live="polite"></div>
+  <script src="./app.js" defer></script>
+</body>
+</html>

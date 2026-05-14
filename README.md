@@ -93,3 +93,13 @@ ios-voice-translator/
 - Apple Translation framework ต้องดาวน์โหลด language pack ครั้งแรกที่ใช้ (ต้องมีอินเทอร์เน็ตครั้งเดียว)
 - หลังจากนั้นทำงานแบบ off-line ได้ทั้งหมด
 - PiP ต้องอนุญาตใน Settings > General > Picture in Picture
+
+## Babelfish Live Web Prototype
+
+This repository also includes a runnable web version inspired by the Babelfish Live room-microphone UI.
+
+```bash
+node web/server.js
+```
+
+Then open <http://localhost:4173>. The web app provides a mobile-first control panel, live microphone capture in supported browsers, speech playback, room link sharing, a room input meter, and a small built-in Node.js Server-Sent Events hub for connected listeners. See [`web/README.md`](web/README.md) for browser support and translation-engine details.
