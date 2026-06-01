@@ -4,6 +4,7 @@
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
   <meta name="theme-color" content="#eef6f5">
+  <meta name="description" content="PC game translation overlay and embedded-text prototype with hook bridge support.">
   <title>Babelfish Live</title>
   <link rel="stylesheet" href="./styles.css">
 </head>
@@ -12,6 +13,7 @@
     <header class="hero">
       <h1>Babelfish Live</h1>
       <p id="deviceHint">Browser detected: guided room-mic flow enabled</p>
+      <p class="pc-badge">PC Game Hook · Overlay · Embedded Preview</p>
     </header>
 
     <section class="room-card" aria-label="Room information">
@@ -80,6 +82,39 @@
       </details>
     </section>
 
+
+    <section class="panel game-panel" aria-label="PC game translation controls">
+      <div class="panel-title">
+        <h2>PC game translator</h2>
+        <span id="hookState">hook bridge idle</span>
+      </div>
+      <p class="guidance">
+        Send captured game text from a hook/OCR bridge to this room, then show the translated result in a floating overlay or in an embedded-style text box preview.
+      </p>
+
+      <label class="field-label" for="displayMode">Translated text output</label>
+      <select id="displayMode">
+        <option value="overlay">Overlay after translation</option>
+        <option value="embedded">Embedded-style replacement preview</option>
+        <option value="both">Overlay + embedded preview</option>
+      </select>
+
+      <div class="action-row">
+        <button class="primary" id="openOverlay" type="button">Open overlay window</button>
+        <button class="secondary" id="copyHookCommand" type="button">Copy hook POST</button>
+      </div>
+
+      <label class="field-label" for="hookInput">Test hooked game text</label>
+      <textarea id="hookInput" rows="3" placeholder="Paste text captured from a game hook or OCR here.">Welcome to the old shrine. Are you ready?</textarea>
+      <button class="secondary full" id="sendHookText" type="button">Simulate hook text</button>
+
+      <div class="game-preview" id="gamePreview" aria-live="polite">
+        <div class="game-preview-bg">GAME TEXT BOX</div>
+        <p class="game-original" id="gameOriginal">Welcome to the old shrine. Are you ready?</p>
+        <p class="game-translation" id="gameTranslation">คำแปลจะแสดงทับพื้นที่ข้อความเกมที่นี่</p>
+      </div>
+    </section>
+
     <section class="panel transcript-panel" aria-live="polite">
       <div class="language-line" id="sourceName">English</div>
       <p id="sourceText">Hello, how are you?</p>
@@ -96,6 +131,10 @@
       <ol id="historyList"></ol>
     </section>
   </main>
+  <aside class="translation-overlay" id="translationOverlay" aria-live="polite">
+    <small id="overlayMeta">Waiting for translated game text</small>
+    <strong id="overlayText">—</strong>
+  </aside>
   <div id="toast" role="status" aria-live="polite"></div>
   <script src="./app.js" defer></script>
 </body>

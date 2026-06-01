@@ -144,11 +144,43 @@ const server = http.createServer(async (req, res) => {
         sourceLanguage: String(body.sourceLanguage || 'auto').slice(0, 20),
         targetLanguage: String(body.targetLanguage || 'en').slice(0, 20),
         isFinal: Boolean(body.isFinal),
+        channel: String(body.channel || 'speech').slice(0, 32),
+        displayMode: String(body.displayMode || 'app').slice(0, 32),
         createdAt: new Date().toISOString()
       };
       room.lastMessage = message;
       broadcast(id, 'message', message);
       json(res, 200, { ok: true, message });
+    } catch (error) {
+      json(res, 400, { ok: false, error: error.message });
+    }
+    return;
+  }
+
+
+  const hookMatch = url.pathname.match(/^\/api\/rooms\/([^/]+)\/hook$/);
+  if (req.method === 'POST' && hookMatch) {
+    try {
+      const { id } = getRoom(hookMatch[1]);
+      const body = await readJson(req);
+      const hookText = String(body.text || body.sourceText || '').slice(0, 5000);
+      if (!hookText.trim()) {
+        json(res, 400, { ok: false, error: 'Missing hook text' });
+        return;
+      }
+      const payload = {
+        id: crypto.randomUUID(),
+        room: id,
+        sourceText: hookText,
+        sourceLanguage: String(body.sourceLanguage || 'auto').slice(0, 20),
+        targetLanguage: String(body.targetLanguage || '').slice(0, 20),
+        engine: String(body.engine || 'external-hook').slice(0, 60),
+        processName: String(body.processName || '').slice(0, 120),
+        displayMode: String(body.displayMode || 'overlay').slice(0, 32),
+        createdAt: new Date().toISOString()
+      };
+      broadcast(id, 'hook', payload);
+      json(res, 200, { ok: true, hook: payload });
     } catch (error) {
       json(res, 400, { ok: false, error: error.message });
     }
