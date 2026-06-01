@@ -5,6 +5,7 @@ const synth = window.speechSynthesis;
 const params = new URLSearchParams(window.location.search);
 const generatedRoom = crypto.randomUUID ? crypto.randomUUID().slice(0, 8) : Math.random().toString(16).slice(2, 10);
 const roomId = (params.get('room') || generatedRoom).replace(/[^a-zA-Z0-9_-]/g, '').slice(0, 48);
+const overlayOnly = params.get('overlay') === '1';
 
 const languageNames = new Intl.DisplayNames([navigator.language || 'en'], { type: 'language' });
 const state = {
@@ -17,7 +18,9 @@ const state = {
   analyser: null,
   meterFrame: null,
   mediaStream: null,
-  history: JSON.parse(localStorage.getItem(`babelfish:${roomId}:history`) || '[]')
+  history: JSON.parse(localStorage.getItem(`babelfish:${roomId}:history`) || '[]'),
+  hookQueue: Promise.resolve(),
+  overlayWindow: null
 };
 
 const phrasebook = new Map([
@@ -45,6 +48,7 @@ function init() {
   renderHistory();
   connectRoom();
   bindEvents();
+  configureOverlayMode();
 
   if (!SpeechRecognition) {
     toast('Speech Recognition is not supported in this browser. Try Chrome or Safari.');
@@ -72,6 +76,14 @@ function bindEvents() {
   $('copyLink').addEventListener('click', copyRoomLink);
   $('refreshDevices').addEventListener('click', refreshStatus);
   $('clearHistory').addEventListener('click', clearHistory);
+  $('displayMode').value = localStorage.getItem('babelfish:displayMode') || 'overlay';
+  $('displayMode').addEventListener('change', (event) => {
+    localStorage.setItem('babelfish:displayMode', event.target.value);
+    applyOutputMode();
+  });
+  $('openOverlay').addEventListener('click', openOverlayWindow);
+  $('copyHookCommand').addEventListener('click', copyHookCommand);
+  $('sendHookText').addEventListener('click', sendDemoHookText);
   $('sourceLanguage').addEventListener('change', () => {
     updateLanguageLabels();
     if (state.listening) restartRecognition();
@@ -118,6 +130,11 @@ function connectRoom() {
   state.eventSource.addEventListener('message', (event) => {
     const message = JSON.parse(event.data);
     showMessage(message, message.id !== state.lastSentId);
+  });
+  state.eventSource.addEventListener('hook', (event) => {
+    if (overlayOnly) return;
+    const hook = JSON.parse(event.data);
+    state.hookQueue = state.hookQueue.then(() => handleHookText(hook));
   });
   state.eventSource.onerror = () => {
     $('presence').textContent = 'reconnecting...';
@@ -173,7 +190,7 @@ async function startRecognition() {
     $('roomState').textContent = isFinal ? 'final' : 'hearing';
     if (isFinal || transcript.length > 12) {
       const translatedText = await translate(transcript);
-      await publishMessage({ sourceText: transcript, translatedText, isFinal });
+      await publishMessage({ sourceText: transcript, translatedText, isFinal, channel: 'speech', displayMode: currentDisplayMode() });
       if (isFinal) speak(translatedText);
     }
   };
@@ -269,7 +286,9 @@ async function publishMessage(message) {
   const payload = {
     ...message,
     sourceLanguage: sourceBase(),
-    targetLanguage: targetBase()
+    targetLanguage: targetBase(),
+    displayMode: message.displayMode || currentDisplayMode(),
+    channel: message.channel || 'speech'
   };
   const response = await fetch(`/api/rooms/${roomId}/messages`, {
     method: 'POST',
@@ -286,8 +305,91 @@ function showMessage(message, fromRemote = false) {
   $('sourceName').textContent = languageLabel(message.sourceLanguage || sourceBase());
   $('targetName').textContent = languageLabel(message.targetLanguage || targetBase());
   $('roomState').textContent = message.isFinal ? 'translated' : 'live';
+  updateGameOutput(message);
   addHistory(message);
   if (fromRemote && $('listenButton').classList.contains('active')) speak(message.translatedText);
+}
+
+
+function configureOverlayMode() {
+  document.body.classList.toggle('overlay-only', overlayOnly);
+  applyOutputMode();
+  if (overlayOnly) toast('Overlay window connected. Keep it above the game window.');
+}
+
+function currentDisplayMode() {
+  return $('displayMode')?.value || localStorage.getItem('babelfish:displayMode') || 'overlay';
+}
+
+function applyOutputMode() {
+  document.body.dataset.displayMode = currentDisplayMode();
+}
+
+function openOverlayWindow() {
+  const url = new URL(window.location.href);
+  url.searchParams.set('room', roomId);
+  url.searchParams.set('overlay', '1');
+  state.overlayWindow = window.open(url.toString(), 'babelfish-game-overlay', 'popup=yes,width=760,height=220');
+  toast(state.overlayWindow ? 'Overlay window opened' : 'Allow pop-ups to open the overlay window');
+}
+
+async function copyHookCommand() {
+  const endpoint = `${window.location.origin}/api/rooms/${roomId}/hook`;
+  const body = JSON.stringify({ text: 'ゲームのテキスト', sourceLanguage: sourceBase(), targetLanguage: targetBase(), displayMode: currentDisplayMode() });
+  const command = `curl -X POST ${endpoint} -H "content-type: application/json" -d '${body}'`;
+  await navigator.clipboard.writeText(command);
+  toast('Hook bridge POST command copied');
+}
+
+async function sendDemoHookText() {
+  const text = $('hookInput').value.trim();
+  if (!text) {
+    toast('Add test game text first');
+    return;
+  }
+  const response = await fetch(`/api/rooms/${roomId}/hook`, {
+    method: 'POST',
+    headers: { 'content-type': 'application/json' },
+    body: JSON.stringify({
+      text,
+      sourceLanguage: sourceBase(),
+      targetLanguage: targetBase(),
+      displayMode: currentDisplayMode(),
+      processName: 'demo-game.exe'
+    })
+  });
+  if (!response.ok) toast('Could not send hook text');
+}
+
+async function handleHookText(hook) {
+  $('hookState').textContent = hook.processName ? `hooked ${hook.processName}` : 'hook text received';
+  const requestedTarget = hook.targetLanguage || targetBase();
+  if (hook.sourceLanguage && hook.sourceLanguage !== 'auto') {
+    const matchingSource = [...$('sourceLanguage').options].find(option => option.value.toLowerCase().startsWith(hook.sourceLanguage.toLowerCase()));
+    if (matchingSource) $('sourceLanguage').value = matchingSource.value;
+  }
+  if (requestedTarget) $('targetLanguage').value = requestedTarget;
+  updateLanguageLabels();
+  const translatedText = await translate(hook.sourceText);
+  await publishMessage({
+    sourceText: hook.sourceText,
+    translatedText,
+    isFinal: true,
+    channel: 'game-hook',
+    displayMode: hook.displayMode || currentDisplayMode()
+  });
+}
+
+function updateGameOutput(message) {
+  const displayMode = message.displayMode || currentDisplayMode();
+  const translated = message.translatedText || '—';
+  const source = message.sourceText || '—';
+  $('gameOriginal').textContent = source;
+  $('gameTranslation').textContent = translated;
+  $('overlayText').textContent = translated;
+  $('overlayMeta').textContent = `${message.channel === 'game-hook' ? 'Game hook' : 'Live translation'} · ${languageLabel(message.sourceLanguage || sourceBase())} → ${languageLabel(message.targetLanguage || targetBase())}`;
+  document.body.dataset.lastChannel = message.channel || 'speech';
+  document.body.dataset.displayMode = displayMode;
 }
 
 function speak(text) {
